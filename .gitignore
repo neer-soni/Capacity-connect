@@ -39,3 +39,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Media uploads (local dev storage — never commit real uploads)
+/public/uploads/videos/
+/public/uploads/documents/
+/public/uploads/images/
+
+# Keep .env.example committed, but not .env (which has secrets)
+!.env.example
+
+# SQLite dev database (no longer used after PostgreSQL migration)
+prisma/*.db
+prisma/*.db-journal
