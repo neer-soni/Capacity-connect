@@ -4,72 +4,120 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = "file:./dev.db"
+  url      = env("DATABASE_URL")
 }
 
 // ─── Users ───────────────────────────────────────────────────────
 model User {
-  id           String   @id @default(cuid())
-  name         String
-  email        String   @unique
-  passwordHash String
-  role         String   @default("trainee") // trainee | trainer | admin
-  status       String   @default("pending") // pending | approved | suspended
-  department   String   @default("")
-  designation  String   @default("")
-  skills       String   @default("[]") // JSON array of skill strings
-  avatar       String   @default("")
-  verified     Boolean  @default(false) // trainer verification
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String   @id @default(cuid())
+  name            String
+  email           String   @unique
+  username        String   @unique
+  passwordHash    String
+  role            String   @default("trainee") // trainee | trainer | admin
+  status          String   @default("pending") // pending | approved | suspended
+  department      String   @default("")
+  designation     String   @default("")
+  skills          String   @default("[]") // JSON array of skill strings
+  bio             String   @default("")
+  avatar          String   @default("")
+  publicPortfolio Boolean  @default(true)
+  verified        Boolean  @default(false) // trainer verification
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  // Relations
-  courses      Course[]       @relation("TrainerCourses")
-  enrollments  Enrollment[]
-  attempts     Attempt[]
-  certificates Certificate[]
-  threads      ForumThread[]
-  replies      ForumReply[]
-  notifications Notification[]
-  reports      Report[]       @relation("ReportedByUser")
-  auditLogs    AuditLog[]
-  announcements Announcement[]
-  competencies CompetencyMap[]
-  resources    Resource[]
+  courses           Course[]          @relation("TrainerCourses")
+  enrollments       Enrollment[]
+  attempts          Attempt[]
+  certificates      Certificate[]
+  threads           ForumThread[]
+  replies           ForumReply[]
+  notifications     Notification[]
+  reports           Report[]          @relation("ReportedByUser")
+  auditLogs         AuditLog[]
+  announcements     Announcement[]
+  competencies      CompetencyMap[]
+  resources         Resource[]
+  lessonProgress    LessonProgress[]
+  userCompetencies  UserCompetency[]
 }
 
 // ─── Courses ─────────────────────────────────────────────────────
 model Course {
-  id           String   @id @default(cuid())
-  title        String
-  description  String
-  trainerId    String
-  department   String   @default("")
-  tags         String   @default("[]") // JSON array
-  status       String   @default("draft") // draft | pending | published
-  duration     String   @default("")
-  level        String   @default("Beginner") // Beginner | Intermediate | Advanced
-  thumbnail    String   @default("📚")
-  totalLessons Int      @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                String   @id @default(cuid())
+  title             String
+  slug              String   @unique
+  description       String
+  trainerId         String
+  department        String   @default("")
+  tags              String   @default("[]") // JSON array
+  status            String   @default("draft") // draft | pending_review | approved | published | rejected
+  duration          String   @default("")
+  estimatedMinutes  Int      @default(0)
+  level             String   @default("Beginner") // Beginner | Intermediate | Advanced
+  thumbnail         String   @default("📚")
+  totalLessons      Int      @default(0)
+  objectives        String   @default("[]") // JSON array of strings
+  rejectionReason   String   @default("")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  // Relations
-  trainer      User         @relation("TrainerCourses", fields: [trainerId], references: [id])
+  trainer      User               @relation("TrainerCourses", fields: [trainerId], references: [id])
   enrollments  Enrollment[]
   resources    Resource[]
+  lessons      Lesson[]
   assessments  Assessment[]
   certificates Certificate[]
   threads      ForumThread[]
   feedback     Feedback[]
+  competencies CourseCompetency[]
+}
+
+// ─── Lessons ─────────────────────────────────────────────────────
+model Lesson {
+  id                   String   @id @default(cuid())
+  courseId             String
+  title                String
+  description          String   @default("")
+  type                 String   @default("video") // video | pdf | slide | text
+  order                Int      @default(0)
+  videoUrl             String   @default("")
+  videoDurationSeconds Int      @default(0)
+  resourceUrl          String   @default("")
+  size                 String   @default("")
+  isRequired           Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  course   Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  progress LessonProgress[]
+}
+
+model LessonProgress {
+  id             String   @id @default(cuid())
+  userId         String
+  courseId       String
+  lessonId       String
+  watchedSeconds Float    @default(0)
+  duration       Float    @default(0)
+  percentage     Float    @default(0)
+  completed      Boolean  @default(false)
+  lastWatchedAt  DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+  @@index([userId, courseId])
 }
 
 // ─── Enrollments ─────────────────────────────────────────────────
 model Enrollment {
   id          String    @id @default(cuid())
   userId      String
-  courseId     String
-  progress    Int       @default(0) // 0-100
+  courseId    String
+  progress    Int       @default(0) // 0-100, server-calculated
   status      String    @default("in_progress") // in_progress | completed
   enrolledAt  DateTime  @default(now())
   completedAt DateTime?
@@ -80,7 +128,7 @@ model Enrollment {
   @@unique([userId, courseId])
 }
 
-// ─── Resources ───────────────────────────────────────────────────
+// ─── Resources (legacy / extra files; lessons are primary content) ─
 model Resource {
   id         String @id @default(cuid())
   courseId   String
@@ -97,14 +145,16 @@ model Resource {
 
 // ─── Assessments / Quizzes ───────────────────────────────────────
 model Assessment {
-  id        String    @id @default(cuid())
-  courseId   String
-  title      String
-  deadline   DateTime?
-  timeLimit  Int       @default(30) // minutes
-  createdAt  DateTime  @default(now())
+  id            String    @id @default(cuid())
+  courseId      String
+  title         String
+  deadline      DateTime?
+  timeLimit     Int       @default(30) // minutes
+  passingScore  Int       @default(60) // percentage
+  published     Boolean   @default(true)
+  createdAt     DateTime  @default(now())
 
-  course    Course     @relation(fields: [courseId], references: [id])
+  course    Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
   questions Question[]
   attempts  Attempt[]
 }
@@ -114,6 +164,8 @@ model Question {
   assessmentId    String
   text            String
   correctOptionId String @default("")
+  marks           Int    @default(1)
+  order           Int    @default(0)
 
   assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
   options    Option[]
@@ -133,6 +185,8 @@ model Attempt {
   userId       String
   score        Int      @default(0)
   total        Int      @default(0)
+  percentage   Int      @default(0)
+  passed       Boolean  @default(false)
   answers      String   @default("{}") // JSON: { questionId: selectedOptionId }
   submittedAt  DateTime @default(now())
 
@@ -142,28 +196,30 @@ model Attempt {
 
 // ─── Certificates ────────────────────────────────────────────────
 model Certificate {
-  id              String   @id @default(cuid())
-  userId          String
+  id               String   @id @default(cuid())
+  userId           String
   courseId         String
-  hash            String   @unique @default(cuid())
-  validatedByAdmin Boolean @default(false)
-  issuedAt        DateTime @default(now())
+  hash             String   @unique @default(cuid())
+  validatedByAdmin Boolean  @default(false)
+  issuedAt         DateTime @default(now())
 
   user   User   @relation(fields: [userId], references: [id])
   course Course @relation(fields: [courseId], references: [id])
+
+  @@unique([userId, courseId])
 }
 
 // ─── Forum ───────────────────────────────────────────────────────
 model ForumThread {
-  id              String   @id @default(cuid())
-  courseId         String
-  authorId         String
-  title            String
-  body             String
-  isQuestion       Boolean @default(false)
-  acceptedReplyId  String?
-  upvotes          Int     @default(0)
-  createdAt        DateTime @default(now())
+  id             String   @id @default(cuid())
+  courseId       String
+  authorId       String
+  title          String
+  body           String
+  isQuestion     Boolean  @default(false)
+  acceptedReplyId String?
+  upvotes        Int      @default(0)
+  createdAt      DateTime @default(now())
 
   course  Course       @relation(fields: [courseId], references: [id])
   author  User         @relation(fields: [authorId], references: [id])
@@ -181,16 +237,16 @@ model ForumReply {
   createdAt     DateTime @default(now())
 
   thread ForumThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  author User       @relation(fields: [authorId], references: [id])
+  author User        @relation(fields: [authorId], references: [id])
 }
 
 // ─── Feedback ────────────────────────────────────────────────────
 model Feedback {
-  id       String @id @default(cuid())
-  userId   String
+  id        String   @id @default(cuid())
+  userId    String
   courseId  String
-  rating   Int    @default(5)
-  comment  String @default("")
+  rating    Int      @default(5)
+  comment   String   @default("")
   createdAt DateTime @default(now())
 
   course Course @relation(fields: [courseId], references: [id])
@@ -202,35 +258,74 @@ model Feedback {
 model Notification {
   id        String   @id @default(cuid())
   userId    String
-  type      String   // quiz | reply | certificate | announcement
+  type      String
   message   String
+  link      String   @default("")
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // ─── Reports / Moderation ────────────────────────────────────────
 model Report {
-  id          String   @id @default(cuid())
-  contentType String   // forum_thread | forum_reply
-  contentId   String
-  reportedBy  String
-  reportedUser String  @default("")
-  reason      String
-  status      String   @default("pending") // pending | resolved | dismissed
-  resolvedAction String @default("")
-  courseContext String  @default("")
-  createdAt   DateTime @default(now())
+  id             String   @id @default(cuid())
+  contentType    String
+  contentId      String
+  reportedBy     String
+  reportedUser   String   @default("")
+  reason         String
+  status         String   @default("pending") // pending | resolved | dismissed
+  resolvedAction String   @default("")
+  courseContext  String   @default("")
+  createdAt      DateTime @default(now())
 
   reporter User @relation("ReportedByUser", fields: [reportedBy], references: [id])
 }
 
-// ─── Competency Map ──────────────────────────────────────────────
+// ─── Competency catalog ──────────────────────────────────────────
+model Competency {
+  id          String @id @default(cuid())
+  name        String @unique
+  description String @default("")
+  category    String @default("")
+
+  courses CourseCompetency[]
+  users   UserCompetency[]
+}
+
+model CourseCompetency {
+  id            String @id @default(cuid())
+  courseId      String
+  competencyId  String
+  targetLevel   Int    @default(3)
+
+  course      Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  competency  Competency  @relation(fields: [competencyId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, competencyId])
+}
+
+model UserCompetency {
+  id             String    @id @default(cuid())
+  userId         String
+  competencyId   String
+  currentLevel   Int       @default(0)
+  targetLevel    Int       @default(3)
+  evidence       String    @default("")
+  lastAssessedAt DateTime?
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  competency  Competency  @relation(fields: [competencyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, competencyId])
+}
+
+// Trainer verified skills (existing mapping)
 model CompetencyMap {
-  id             String  @id @default(cuid())
-  trainerId      String
-  skillTag       String
+  id              String  @id @default(cuid())
+  trainerId       String
+  skillTag        String
   verifiedByAdmin Boolean @default(false)
 
   trainer User @relation(fields: [trainerId], references: [id])
@@ -242,8 +337,8 @@ model CompetencyMap {
 model AuditLog {
   id        String   @id @default(cuid())
   userId    String
-  action    String   // approved_user | rejected_user | published_course | etc.
-  target    String   @default("") // target entity id
+  action    String
+  target    String   @default("")
   details   String   @default("")
   createdAt DateTime @default(now())
 
@@ -255,7 +350,7 @@ model Announcement {
   id          String   @id @default(cuid())
   title       String
   body        String
-  type        String   @default("announcement") // announcement | achievement | notification
+  type        String   @default("announcement")
   icon        String   @default("📢")
   publishedBy String
   createdAt   DateTime @default(now())

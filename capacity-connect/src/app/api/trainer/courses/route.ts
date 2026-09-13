@@ -1,97 +1,59 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/rbac";
+import { courseSchema } from "@/lib/validation";
+import { createCourseDraft } from "@/lib/services/course.service";
+import { parseJsonArray } from "@/lib/services/course.service";
 
-// GET /api/trainer/courses — Trainer's own courses
 export async function GET() {
-  try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  const { user, error } = await requireRole(["trainer", "admin"]);
+  if (error || !user) return error!;
 
-    const courses = await prisma.course.findMany({
-      where: { trainerId: session.user.id },
-      include: {
-        _count: { select: { enrollments: true, resources: true, threads: true } },
-        feedback: { select: { rating: true } },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+  const courses = await prisma.course.findMany({
+    where: user.role === "admin" ? {} : { trainerId: user.id },
+    include: {
+      _count: { select: { enrollments: true, lessons: true, threads: true } },
+      feedback: { select: { rating: true } },
+      competencies: { include: { competency: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
 
-    const result = courses.map((c) => ({
+  return NextResponse.json(
+    courses.map((c) => ({
       id: c.id,
       title: c.title,
+      slug: c.slug,
       description: c.description,
       department: c.department,
-      tags: JSON.parse(c.tags),
+      tags: parseJsonArray(c.tags),
       status: c.status,
+      rejectionReason: c.rejectionReason,
       duration: c.duration,
       level: c.level,
       thumbnail: c.thumbnail,
-      totalLessons: c.totalLessons,
+      totalLessons: c._count.lessons,
       enrolledCount: c._count.enrollments,
-      resourceCount: c._count.resources,
       threadCount: c._count.threads,
+      competencies: c.competencies.map((x) => x.competency.name),
       rating:
         c.feedback.length > 0
           ? +(c.feedback.reduce((sum, f) => sum + f.rating, 0) / c.feedback.length).toFixed(1)
           : 0,
       createdAt: c.createdAt,
-    }));
-
-    return NextResponse.json(result);
-  } catch (error) {
-    console.error("GET trainer courses error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+    }))
+  );
 }
 
-// POST /api/trainer/courses — Create new course
 export async function POST(request: Request) {
-  try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  const { user, error } = await requireRole(["trainer"]);
+  if (error || !user) return error!;
 
-    const body = await request.json();
-    const { title, description, department, level, duration, tags, totalLessons, thumbnail } = body;
-
-    if (!title || !description) {
-      return NextResponse.json({ error: "Title and description required" }, { status: 400 });
-    }
-
-    const course = await prisma.course.create({
-      data: {
-        title,
-        description,
-        trainerId: session.user.id,
-        department: department || "",
-        level: level || "Beginner",
-        duration: duration || "",
-        tags: JSON.stringify(tags || []),
-        totalLessons: totalLessons || 0,
-        thumbnail: thumbnail || "📚",
-        status: "draft",
-      },
-    });
-
-    // Notify admins
-    const admins = await prisma.user.findMany({ where: { role: "admin" } });
-    for (const admin of admins) {
-      await prisma.notification.create({
-        data: {
-          userId: admin.id,
-          type: "announcement",
-          message: `New course "${title}" submitted by ${session.user.name} for review.`,
-        },
-      });
-    }
-
-    return NextResponse.json(course, { status: 201 });
-  } catch (error) {
-    console.error("POST trainer course error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  const parsed = courseSchema.safeParse(await request.json());
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid input" }, { status: 400 });
   }
+
+  const course = await createCourseDraft(user.id, parsed.data);
+  return NextResponse.json(course, { status: 201 });
 }

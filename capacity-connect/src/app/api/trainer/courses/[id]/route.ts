@@ -1,17 +1,17 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/rbac";
-import { reviewCourse, parseJsonArray } from "@/lib/services/course.service";
-import { adminCourseActionSchema } from "@/lib/validation";
+import { requireRole, isOwnerOrAdmin } from "@/lib/rbac";
+import { courseSchema } from "@/lib/validation";
+import { updateCourse, parseJsonArray } from "@/lib/services/course.service";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { error } = await requireRole(["admin"]);
-  if (error) return error;
+  const { user, error } = await requireRole(["trainer", "admin"]);
+  if (error || !user) return error!;
   const { id } = await params;
+
   const course = await prisma.course.findUnique({
     where: { id },
     include: {
-      trainer: { select: { id: true, name: true, email: true, department: true, avatar: true } },
       lessons: { orderBy: { order: "asc" } },
       assessments: { include: { questions: { include: { options: true }, orderBy: { order: "asc" } } } },
       competencies: { include: { competency: true } },
@@ -19,30 +19,31 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     },
   });
   if (!course) return NextResponse.json({ error: "Course not found" }, { status: 404 });
+  if (!isOwnerOrAdmin(user, course.trainerId)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   return NextResponse.json({
     ...course,
     tags: parseJsonArray(course.tags),
     objectives: parseJsonArray(course.objectives),
+    competencyIds: course.competencies.map((c) => c.competencyId),
+    competencies: course.competencies.map((c) => c.competency),
   });
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { user, error } = await requireRole(["admin"]);
+  const { user, error } = await requireRole(["trainer"]);
   if (error || !user) return error!;
   const { id } = await params;
-  const parsed = adminCourseActionSchema.safeParse(await request.json());
+  const parsed = courseSchema.partial().safeParse(await request.json());
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+    return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid input" }, { status: 400 });
   }
   try {
-    const updated = await reviewCourse({
-      courseId: id,
-      adminId: user.id,
-      action: parsed.data.action,
-      reason: parsed.data.reason,
-    });
+    const updated = await updateCourse(id, user.id, parsed.data);
     return NextResponse.json(updated);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Review failed" }, { status: 400 });
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Update failed" }, { status: 400 });
   }
 }

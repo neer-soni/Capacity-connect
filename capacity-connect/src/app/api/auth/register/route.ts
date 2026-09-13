@@ -1,6 +1,17 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { usernameFromEmail } from "@/lib/slug";
+
+async function uniqueUsername(base: string): Promise<string> {
+  let candidate = base;
+  let i = 1;
+  while (await prisma.user.findUnique({ where: { username: candidate } })) {
+    candidate = `${base}-${i}`;
+    i += 1;
+  }
+  return candidate;
+}
 
 export async function POST(request: Request) {
   try {
@@ -42,6 +53,7 @@ export async function POST(request: Request) {
       data: {
         name,
         email,
+        username: await uniqueUsername(usernameFromEmail(email)),
         passwordHash,
         role: userRole,
         status,

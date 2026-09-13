@@ -1,11 +1,31 @@
 "use client";
+import { useState, useEffect } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
-import { mockCourses } from "@/lib/mock-data";
 import { CheckCircle, XCircle, Eye, Clock } from "lucide-react";
 
 export default function AdminCoursesPage() {
-  const pending = mockCourses.filter((c) => c.status === "draft");
-  const published = mockCourses.filter((c) => c.status === "published");
+  const [courses, setCourses] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadCourses = async () => {
+    const res = await fetch("/api/admin/courses");
+    const data = await res.json();
+    setCourses(Array.isArray(data) ? data : []);
+    setLoading(false);
+  };
+
+  useEffect(() => { loadCourses(); }, []);
+
+  const pending = courses.filter((c) => c.status === "pending_review");
+  const published = courses.filter((c) => c.status === "published");
+
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div style={{ textAlign: "center", padding: 60, color: "hsl(215 16% 57%)" }}>Loading courses data...</div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
