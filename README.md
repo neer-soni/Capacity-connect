@@ -24,8 +24,6 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 To learn more about Next.js, take a look at the following resources:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
@@ -34,3 +32,21 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Implemented Course Workflow
+
+The current implementation includes a server-authorized trainer course workflow:
+
+- Trainers can create and save course drafts with ordered video, PDF, or text lessons.
+- Trainers can submit drafts for review; submitted courses use `pending_review` status.
+- Admins can review real database records and approve or reject courses with a reason.
+- Approved courses become `published` and are available through public discovery and enrollment.
+- Public course detail APIs only expose published courses.
+- Prisma uses SQLite for local development and can be migrated to PostgreSQL by changing the datasource configuration for deployment.
+
+Run the local database setup and app with:
+
+```bash
+npx prisma db push
+npm run dev
+```

@@ -9,6 +9,9 @@ export async function GET() {
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    if (session.user.role !== "trainer") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const courses = await prisma.course.findMany({
       where: { trainerId: session.user.id },
@@ -54,6 +57,9 @@ export async function POST(request: Request) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    if (session.user.role !== "trainer") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const body = await request.json();
     const { title, description, department, level, duration, tags, totalLessons, thumbnail } = body;
@@ -76,18 +82,6 @@ export async function POST(request: Request) {
         status: "draft",
       },
     });
-
-    // Notify admins
-    const admins = await prisma.user.findMany({ where: { role: "admin" } });
-    for (const admin of admins) {
-      await prisma.notification.create({
-        data: {
-          userId: admin.id,
-          type: "announcement",
-          message: `New course "${title}" submitted by ${session.user.name} for review.`,
-        },
-      });
-    }
 
     return NextResponse.json(course, { status: 201 });
   } catch (error) {

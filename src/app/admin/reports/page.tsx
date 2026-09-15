@@ -1,98 +1,70 @@
 "use client";
+
+import { useEffect, useState } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
-import { ShieldCheck, AlertTriangle, Eye, CheckCircle, XCircle, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle, Trash2 } from "lucide-react";
 
-const mockReports = [
-  { id: "r1", type: "forum_reply", content: "Inappropriate language in reply", reportedBy: "Sneha Patel", reportedUser: "Unknown User", reason: "Offensive language", status: "pending", createdAt: "2024-09-10", courseContext: "Introduction to Oceanography" },
-  { id: "r2", type: "forum_thread", content: "Spam promotional link posted", reportedBy: "Amit Verma", reportedUser: "Bot Account", reason: "Spam", status: "pending", createdAt: "2024-09-09", courseContext: "Climate Change & Earth Systems" },
-  { id: "r3", type: "forum_reply", content: "Misleading scientific claims without citation", reportedBy: "Dr. Rajesh Kumar", reportedUser: "Rahul Desai", reason: "Misinformation", status: "pending", createdAt: "2024-09-08", courseContext: "Atmospheric Sciences Fundamentals" },
-  { id: "r4", type: "forum_thread", content: "Duplicate thread posted 5 times", reportedBy: "Priya Sharma", reportedUser: "Mohan Gupta", reason: "Spam / Duplicate", status: "resolved", createdAt: "2024-09-05", courseContext: "Introduction to Oceanography", resolvedAction: "Content removed" },
-];
-
-const statusColors: Record<string, string> = {
-  pending: "badge-warning",
-  resolved: "badge-success",
-  dismissed: "badge-muted",
+type Report = {
+  id: string;
+  contentType: string;
+  reason: string;
+  status: string;
+  reportedBy: string;
+  courseContext: string;
+  resolvedAction: string;
+  createdAt: string;
 };
 
 export default function AdminReportsPage() {
-  const pending = mockReports.filter((r) => r.status === "pending");
-  const resolved = mockReports.filter((r) => r.status !== "pending");
+  const [reports, setReports] = useState<Report[]>([]);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/admin/reports")
+      .then(async (response) => ({ ok: response.ok, data: await response.json() }))
+      .then(({ ok, data }) => {
+        if (!active) return;
+        if (ok) setReports(data);
+        else setError(data.error || "Could not load reports");
+      })
+      .catch(() => { if (active) setError("Could not load reports"); });
+    return () => { active = false; };
+  }, []);
+
+  async function resolve(reportId: string, action: "dismiss" | "remove") {
+    const response = await fetch("/api/admin/reports", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reportId, action }),
+    });
+    const data = await response.json();
+    if (!response.ok) setError(data.error || "Could not resolve report");
+    else setReports((current) => current.map((report) => report.id === reportId ? data : report));
+  }
+
+  const pending = reports.filter((report) => report.status === "pending");
+  const resolved = reports.filter((report) => report.status !== "pending");
 
   return (
     <DashboardLayout>
       <h1 style={{ fontSize: "1.5rem", fontWeight: 800, marginBottom: 6 }}>Moderation Queue</h1>
-      <p style={{ color: "hsl(215 18% 38%)", fontSize: "0.9rem", marginBottom: 28 }}>Review flagged forum content across all course discussions</p>
-
-      {/* Pending reports */}
-      <h2 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
-        <AlertTriangle size={16} style={{ color: "hsl(38 80% 40%)" }} />
-        Pending Reports ({pending.length})
-      </h2>
+      <p style={{ color: "hsl(215 18% 38%)", fontSize: "0.9rem", marginBottom: 28 }}>Review flagged forum content from the database.</p>
+      {error && <div className="card" style={{ padding: 14, color: "hsl(0 72% 45%)", marginBottom: 18 }}>{error}</div>}
+      <h2 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: 14 }}><AlertTriangle size={16} /> Pending Reports ({pending.length})</h2>
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 32 }}>
-        {pending.map((report, i) => (
-          <div key={report.id} className="card animate-fade-in" style={{ padding: "20px", borderLeft: "3px solid hsl(38 95% 55%)", animationDelay: `${i * 0.05}s` }}>
-            <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
-              <div style={{ width: 44, height: 44, borderRadius: 10, background: "hsl(0 72% 96%)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <AlertTriangle size={20} style={{ color: "hsl(0 72% 51%)" }} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
-                  <span className={`badge ${statusColors[report.status]}`} style={{ fontSize: "0.7rem" }}>{report.status}</span>
-                  <span className="badge badge-muted" style={{ fontSize: "0.7rem" }}>{report.type.replace("_", " ")}</span>
-                  <span className="badge badge-error" style={{ fontSize: "0.7rem" }}>{report.reason}</span>
-                </div>
-                <p style={{ fontSize: "0.9rem", fontWeight: 600, marginBottom: 4 }}>&ldquo;{report.content}&rdquo;</p>
-                <div style={{ fontSize: "0.8rem", color: "hsl(215 16% 57%)", lineHeight: 1.6 }}>
-                  <span>Reported by: <strong>{report.reportedBy}</strong></span>
-                  <span style={{ margin: "0 8px" }}>·</span>
-                  <span>Against: <strong>{report.reportedUser}</strong></span>
-                  <span style={{ margin: "0 8px" }}>·</span>
-                  <span>In: <em>{report.courseContext}</em></span>
-                  <span style={{ margin: "0 8px" }}>·</span>
-                  <span>{new Date(report.createdAt).toLocaleDateString("en-IN")}</span>
-                </div>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
-                <button className="btn btn-sm btn-ghost"><Eye size={13} /> View</button>
-                <button className="btn btn-sm" style={{ background: "hsl(145 63% 40%)", color: "white", fontSize: "0.72rem" }}>
-                  <CheckCircle size={13} /> Dismiss
-                </button>
-                <button className="btn btn-sm" style={{ background: "hsl(0 72% 51%)", color: "white", fontSize: "0.72rem" }}>
-                  <Trash2 size={13} /> Remove Content
-                </button>
-              </div>
+        {pending.map((report) => (
+          <div key={report.id} className="card" style={{ padding: 20, borderLeft: "3px solid hsl(38 95% 55%)" }}>
+            <div style={{ display: "flex", gap: 16 }}>
+              <AlertTriangle size={22} style={{ color: "hsl(38 80% 40%)" }} />
+              <div style={{ flex: 1 }}><div style={{ display: "flex", gap: 8, marginBottom: 6 }}><span className="badge badge-warning">Pending</span><span className="badge badge-muted">{report.contentType.replace("_", " ")}</span><span className="badge badge-error">{report.reason}</span></div><p style={{ fontSize: "0.85rem", color: "hsl(215 18% 38%)" }}>Reported by {report.reportedBy} · {report.courseContext || "Course discussion"}</p><p style={{ fontSize: "0.78rem", color: "hsl(215 16% 57%)" }}>{new Date(report.createdAt).toLocaleDateString("en-IN")}</p></div>
+              <div style={{ display: "flex", gap: 8 }}><button className="btn btn-sm btn-outline" onClick={() => resolve(report.id, "dismiss")}><CheckCircle size={13} /> Dismiss</button><button className="btn btn-sm" style={{ background: "hsl(0 72% 51%)", color: "white" }} onClick={() => resolve(report.id, "remove")}><Trash2 size={13} /> Remove</button></div>
             </div>
           </div>
         ))}
       </div>
-
-      {/* Resolved */}
-      <h2 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
-        <CheckCircle size={16} style={{ color: "hsl(145 63% 40%)" }} />
-        Resolved ({resolved.length})
-      </h2>
-      <div className="card" style={{ overflow: "hidden" }}>
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr><th>Content</th><th>Reason</th><th>Reported By</th><th>Course</th><th>Action Taken</th><th>Date</th></tr>
-            </thead>
-            <tbody>
-              {resolved.map((r) => (
-                <tr key={r.id}>
-                  <td style={{ fontWeight: 600, fontSize: "0.85rem" }}>{r.content}</td>
-                  <td><span className="badge badge-error" style={{ fontSize: "0.7rem" }}>{r.reason}</span></td>
-                  <td>{r.reportedBy}</td>
-                  <td style={{ fontSize: "0.82rem" }}>{r.courseContext}</td>
-                  <td><span className="badge badge-success" style={{ fontSize: "0.7rem" }}>{(r as any).resolvedAction || "Resolved"}</span></td>
-                  <td style={{ fontSize: "0.82rem", color: "hsl(215 16% 57%)" }}>{new Date(r.createdAt).toLocaleDateString("en-IN")}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <h2 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: 14 }}><CheckCircle size={16} /> Resolved ({resolved.length})</h2>
+      <div className="card" style={{ overflow: "hidden" }}><div className="table-container"><table><thead><tr><th>Type</th><th>Reason</th><th>Status</th><th>Action</th><th>Date</th></tr></thead><tbody>{resolved.map((report) => <tr key={report.id}><td>{report.contentType.replace("_", " ")}</td><td>{report.reason}</td><td><span className="badge badge-success">{report.status}</span></td><td>{report.resolvedAction}</td><td>{new Date(report.createdAt).toLocaleDateString("en-IN")}</td></tr>)}</tbody></table></div></div>
     </DashboardLayout>
   );
 }

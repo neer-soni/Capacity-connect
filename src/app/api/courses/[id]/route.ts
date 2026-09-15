@@ -9,10 +9,11 @@ export async function GET(
   try {
     const { id } = await params;
     const course = await prisma.course.findUnique({
-      where: { id },
+      where: { id, status: "published" },
       include: {
         trainer: { select: { id: true, name: true, avatar: true, department: true, verified: true } },
         resources: true,
+        lessons: { orderBy: { position: "asc" } },
         _count: { select: { enrollments: true } },
         feedback: { select: { rating: true } },
         threads: {
@@ -57,6 +58,15 @@ export async function GET(
         title: r.title,
         size: r.size,
         duration: r.duration,
+      })),
+      lessons: course.lessons.map((lesson) => ({
+        id: lesson.id,
+        title: lesson.title,
+        description: lesson.description,
+        type: lesson.type,
+        duration: lesson.duration,
+        position: lesson.position,
+        required: lesson.required,
       })),
       threads: course.threads.map((t) => ({
         id: t.id,

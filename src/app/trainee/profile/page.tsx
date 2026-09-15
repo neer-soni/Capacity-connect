@@ -3,47 +3,30 @@ import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import EditProfileModal from "@/components/profile/EditProfileModal";
-import { mockUsers, mockCourses, mockEnrollments, mockCertificates, mockSkillGaps } from "@/lib/mock-data";
+import { useMemo } from "react";
 import Link from "next/link";
 import { Edit, Award, BookOpen, TrendingUp, CheckCircle, XCircle, ExternalLink, Mail, Building, Briefcase } from "lucide-react";
 
 export default function TraineeProfilePage() {
   const { data: session } = useSession();
-  const [profile, setProfile] = useState<any>(mockUsers.trainee);
+  const [profile, setProfile] = useState<any>({ skills: [] });
+  const [enrollments, setEnrollments] = useState<any[]>([]);
+  const [certificates, setCertificates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   useEffect(() => {
-    fetch("/api/profile")
-      .then((r) => {
-        if (!r.ok) throw new Error("Not loaded");
-        return r.json();
+    Promise.all([fetch("/api/profile").then((response) => response.json()), fetch("/api/trainee/enrollments").then((response) => response.json()), fetch("/api/trainee/certificates").then((response) => response.json())])
+      .then(([profileData, enrollmentData, certificateData]) => {
+        if (profileData?.name) setProfile(profileData);
+        if (Array.isArray(enrollmentData)) setEnrollments(enrollmentData);
+        if (Array.isArray(certificateData)) setCertificates(certificateData);
       })
-      .then((data) => {
-        if (data && data.name) {
-          setProfile(data);
-        }
-        setLoading(false);
-      })
-      .catch(() => {
-        // Fallback to session or mock
-        if (session?.user) {
-          setProfile((prev: any) => ({
-            ...prev,
-            name: session.user.name || prev.name,
-            email: session.user.email || prev.email,
-            department: (session.user as any).department || prev.department,
-            avatar: (session.user as any).avatar || prev.avatar,
-          }));
-        }
-        setLoading(false);
-      });
+      .finally(() => setLoading(false));
   }, [session]);
 
-  const completedCourses = mockEnrollments
-    .filter((e) => e.status === "completed")
-    .map((e) => mockCourses.find((c) => c.id === e.courseId)!)
-    .filter(Boolean);
+  const completedCourses = useMemo(() => enrollments.filter((enrollment) => enrollment.status === "completed"), [enrollments]);
+  const skillGaps: any[] = [];
 
   return (
     <DashboardLayout>
@@ -108,10 +91,10 @@ export default function TraineeProfilePage() {
               Learning Progress Stats
             </h3>
             {[
-              { label: "Courses Enrolled", value: mockEnrollments.length },
+              { label: "Courses Enrolled", value: enrollments.length },
               { label: "Courses Completed", value: completedCourses.length },
-              { label: "Certificates Earned", value: mockCertificates.length },
-              { label: "Skills Verified", value: (profile.skills || []).length || 4 },
+              { label: "Certificates Earned", value: certificates.length },
+              { label: "Skills Tracked", value: (profile.skills || []).length },
             ].map((s) => (
               <div
                 key={s.label}
@@ -151,7 +134,7 @@ export default function TraineeProfilePage() {
               </button>
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {(profile.skills && profile.skills.length > 0 ? profile.skills : mockUsers.trainee.skills).map((s: string) => (
+              {(profile.skills || []).map((s: string) => (
                 <span key={s} className="skill-pill">
                   {s}
                 </span>
@@ -168,11 +151,11 @@ export default function TraineeProfilePage() {
               <TrendingUp size={18} style={{ color: "hsl(215 84% 30%)" }} />
               <h2 style={{ fontSize: "1.05rem", fontWeight: 800 }}>Skill Gap Tracker</h2>
               <span className="badge badge-error" style={{ fontSize: "0.7rem", marginLeft: "auto" }}>
-                {mockSkillGaps.filter((s) => !s.hasIt && s.required).length} Required Gaps
+                {skillGaps.filter((s) => !s.hasIt && s.required).length} Required Gaps
               </span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {mockSkillGaps.map((s) => (
+              {skillGaps.length === 0 ? <p style={{ fontSize: "0.85rem", color: "hsl(215 16% 57%)" }}>Skill-gap analysis will appear after competency requirements are configured.</p> : skillGaps.map((s) => (
                 <div
                   key={s.skill}
                   style={{
@@ -223,9 +206,9 @@ export default function TraineeProfilePage() {
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {completedCourses.map((c) => (
+                {completedCourses.map((enrollment) => (
                   <div
-                    key={c.id}
+                    key={enrollment.id}
                     style={{
                       display: "flex",
                       gap: 12,
@@ -236,11 +219,11 @@ export default function TraineeProfilePage() {
                       border: "1px solid hsl(145 63% 88%)",
                     }}
                   >
-                    <div style={{ fontSize: "1.6rem" }}>{c.thumbnail}</div>
+                    <div style={{ fontSize: "1.6rem" }}>{enrollment.course.thumbnail}</div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: "0.875rem", fontWeight: 700 }}>{c.title}</div>
+                      <div style={{ fontSize: "0.875rem", fontWeight: 700 }}>{enrollment.course.title}</div>
                       <div style={{ fontSize: "0.78rem", color: "hsl(215 16% 57%)" }}>
-                        By {c.trainer} · {c.department}
+                        By {enrollment.course.trainer} · {enrollment.course.department}
                       </div>
                     </div>
                     <CheckCircle size={18} style={{ color: "hsl(145 63% 40%)" }} />
@@ -259,7 +242,7 @@ export default function TraineeProfilePage() {
                 View All →
               </Link>
             </div>
-            {mockCertificates.map((cert) => (
+            {certificates.map((cert) => (
               <div
                 key={cert.id}
                 style={{
@@ -275,14 +258,14 @@ export default function TraineeProfilePage() {
               >
                 <div style={{ fontSize: "1.8rem" }}>🏆</div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: "0.875rem", fontWeight: 700 }}>{cert.courseTitle}</div>
+                  <div style={{ fontSize: "0.875rem", fontWeight: 700 }}>{cert.course?.title}</div>
                   <div style={{ fontSize: "0.78rem", color: "hsl(215 16% 57%)" }}>
                     Issued: {new Date(cert.issuedAt).toLocaleDateString("en-IN")} · ID: {cert.hash}
                   </div>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
                   <span className="badge badge-success" style={{ fontSize: "0.68rem" }}>
-                    ✓ Admin Validated
+                    {cert.validatedByAdmin ? "✓ Admin Validated" : "Pending Validation"}
                   </span>
                   <Link
                     href="/trainee/certificates"

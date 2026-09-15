@@ -1,7 +1,6 @@
 "use client";
 import { use, useState, useEffect } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
-import { mockForumThreads, mockCourses } from "@/lib/mock-data";
 import { ArrowLeft, MessageSquare, ThumbsUp, CheckCircle, Plus } from "lucide-react";
 import Link from "next/link";
 
@@ -11,8 +10,11 @@ export default function ForumPage({ params }: { params: Promise<{ id: string }> 
   const [threads, setThreads] = useState<any[]>([]);
   const [selectedThread, setSelectedThread] = useState<string | null>(null);
   const [newReply, setNewReply] = useState("");
+  const [newTitle, setNewTitle] = useState("");
+  const [newBody, setNewBody] = useState("");
+  const [newIsQuestion, setNewIsQuestion] = useState(false);
+  const [error, setError] = useState("");
   const [showNewThread, setShowNewThread] = useState(false);
-  const [localVotes, setLocalVotes] = useState<Record<string, number>>({});
 
   useEffect(() => {
     // Load course
@@ -25,24 +27,41 @@ export default function ForumPage({ params }: { params: Promise<{ id: string }> 
     fetch(`/api/courses/${id}/forum`)
       .then((r) => r.json())
       .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           setThreads(data);
           setSelectedThread(data[0]?.id || null);
-        } else {
-          // Fallback to sample threads
-          const sample = mockForumThreads.slice(0, 3).map((t, idx) => ({ ...t, id: `sample-${idx}` }));
-          setThreads(sample);
-          setSelectedThread(sample[0]?.id || null);
         }
       })
-      .catch(() => {
-        const sample = mockForumThreads.slice(0, 3).map((t, idx) => ({ ...t, id: `sample-${idx}` }));
-        setThreads(sample);
-        setSelectedThread(sample[0]?.id || null);
-      });
+      .catch(() => setError("Could not load forum threads"));
   }, [id]);
 
   const thread = threads.find((t) => t.id === selectedThread) || threads[0];
+
+  async function postThread() {
+    const response = await fetch(`/api/courses/${id}/forum`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: newTitle, body: newBody, isQuestion: newIsQuestion }) });
+    const data = await response.json();
+    if (!response.ok) { setError(data.error || "Could not post thread"); return; }
+    setThreads((current) => [{ ...data, replies: [] }, ...current]);
+    setSelectedThread(data.id); setNewTitle(""); setNewBody(""); setNewIsQuestion(false); setShowNewThread(false); setError("");
+  }
+
+  async function postReply() {
+    if (!thread || !newReply.trim()) return;
+    const response = await fetch(`/api/forum/${thread.id}/reply`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ body: newReply }) });
+    const data = await response.json();
+    if (!response.ok) { setError(data.error || "Could not post reply"); return; }
+    setThreads((current) => current.map((item) => item.id === thread.id ? { ...item, replies: [...item.replies, data] } : item));
+    setNewReply(""); setError("");
+  }
+
+  async function vote(replyId?: string) {
+    if (!thread) return;
+    const response = await fetch(`/api/forum/${thread.id}/reply`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(replyId ? { replyId } : { threadUpvote: true }) });
+    const data = await response.json();
+    if (!response.ok) { setError(data.error || "Could not vote"); return; }
+    if (replyId) setThreads((current) => current.map((item) => item.id === thread.id ? { ...item, replies: item.replies.map((reply: any) => reply.id === replyId ? { ...reply, upvotes: data.upvotes } : reply) } : item));
+    else setThreads((current) => current.map((item) => item.id === thread.id ? { ...item, upvotes: data.upvotes } : item));
+  }
 
   return (
     <DashboardLayout>
@@ -62,23 +81,24 @@ export default function ForumPage({ params }: { params: Promise<{ id: string }> 
           <Plus size={15} /> New Thread
         </button>
       </div>
+      {error && <div className="card" style={{ padding: 12, marginBottom: 16, color: "hsl(0 72% 45%)" }}>{error}</div>}
 
       {/* New thread form */}
       {showNewThread && (
         <div className="card animate-fade-in" style={{ padding: "20px", marginBottom: 20 }}>
           <h3 style={{ fontSize: "0.9rem", fontWeight: 700, marginBottom: 14 }}>New Discussion Thread</h3>
-          <input className="input" placeholder="Thread title..." style={{ marginBottom: 10 }} />
+          <input className="input" placeholder="Thread title..." value={newTitle} onChange={(event) => setNewTitle(event.target.value)} style={{ marginBottom: 10 }} />
           <textarea
             className="input"
             placeholder="What would you like to discuss or ask?"
             rows={3}
-            style={{ resize: "vertical", marginBottom: 10 }}
+            style={{ resize: "vertical", marginBottom: 10 }} value={newBody} onChange={(event) => setNewBody(event.target.value)}
           />
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.82rem", cursor: "pointer" }}>
-              <input type="checkbox" /> Mark as Question (enables accepted answer)
+              <input type="checkbox" checked={newIsQuestion} onChange={(event) => setNewIsQuestion(event.target.checked)} /> Mark as Question (enables accepted answer)
             </label>
-            <button className="btn btn-primary btn-sm" style={{ marginLeft: "auto" }}>Post Thread</button>
+            <button className="btn btn-primary btn-sm" style={{ marginLeft: "auto" }} onClick={postThread}>Post Thread</button>
             <button className="btn btn-ghost btn-sm" onClick={() => setShowNewThread(false)}>Cancel</button>
           </div>
         </div>
@@ -146,7 +166,7 @@ export default function ForumPage({ params }: { params: Promise<{ id: string }> 
               <div style={{ display: "flex", gap: 10, paddingTop: 10, borderTop: "1px solid hsl(214 20% 92%)" }}>
                 <button
                   className="btn btn-ghost btn-sm"
-                  onClick={() => setLocalVotes((p) => ({ ...p, [thread.id]: (p[thread.id] || 0) + 1 }))}
+                  onClick={() => vote()}
                 >
                   <ThumbsUp size={14} /> {(thread.upvotes || 0) + (localVotes[thread.id] || 0)}
                 </button>
@@ -190,7 +210,7 @@ export default function ForumPage({ params }: { params: Promise<{ id: string }> 
                     <button
                       className="btn btn-ghost btn-sm"
                       style={{ marginTop: 8 }}
-                      onClick={() => setLocalVotes((p) => ({ ...p, [reply.id]: (p[reply.id] || 0) + 1 }))}
+                      onClick={() => vote(reply.id)}
                     >
                       <ThumbsUp size={13} /> {reply.upvotes + (localVotes[reply.id] || 0)}
                     </button>
@@ -213,7 +233,7 @@ export default function ForumPage({ params }: { params: Promise<{ id: string }> 
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <button
                   className="btn btn-primary btn-sm"
-                  onClick={() => setNewReply("")}
+                  onClick={postReply}
                 >
                   Post Reply
                 </button>

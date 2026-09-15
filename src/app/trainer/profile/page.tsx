@@ -3,12 +3,12 @@ import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import EditProfileModal from "@/components/profile/EditProfileModal";
-import { mockUsers, mockTrainerStats, mockCourses } from "@/lib/mock-data";
 import { Star, Users, BookOpen, Award, CheckCircle, Edit, Mail, Building, Briefcase } from "lucide-react";
 
 export default function TrainerProfilePage() {
   const { data: session } = useSession();
-  const [profile, setProfile] = useState<any>(mockUsers.trainer);
+  const [profile, setProfile] = useState<any>({ skills: [] });
+  const [stats, setStats] = useState<any>({ totalStudents: 0, avgRating: 0, certificatesIssued: 0 });
   const [loading, setLoading] = useState(true);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [courses, setCourses] = useState<any[]>([]);
@@ -45,13 +45,11 @@ export default function TrainerProfilePage() {
       .then((data) => {
         if (Array.isArray(data)) {
           setCourses(data);
-        } else {
-          setCourses(mockCourses.slice(0, 3));
         }
       })
       .catch(() => {
-        setCourses(mockCourses.slice(0, 3));
       });
+      fetch("/api/trainer/stats").then((response) => response.json()).then((data) => { if (!data.error) setStats(data); }).catch(() => {});
   }, [session]);
 
   return (
@@ -102,10 +100,10 @@ export default function TrainerProfilePage() {
             }}
           >
             {[
-              { label: "Students Taught", value: mockTrainerStats.totalStudents, icon: <Users size={16} /> },
-              { label: "Avg Rating", value: mockTrainerStats.avgRating, icon: <Star size={16} fill="hsl(38 80% 40%)" /> },
-              { label: "Active Courses", value: courses.length || 3, icon: <BookOpen size={16} /> },
-              { label: "Certificates Issued", value: mockTrainerStats.certificatesIssued, icon: <Award size={16} /> },
+              { label: "Students Taught", value: stats.totalStudents, icon: <Users size={16} /> },
+              { label: "Avg Rating", value: stats.avgRating, icon: <Star size={16} fill="hsl(38 80% 40%)" /> },
+              { label: "Active Courses", value: courses.length, icon: <BookOpen size={16} /> },
+              { label: "Certificates Issued", value: stats.certificatesIssued, icon: <Award size={16} /> },
             ].map((s) => (
               <div key={s.label} style={{ textAlign: "center" }}>
                 <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "hsl(215 84% 30%)", marginBottom: 2 }}>
@@ -143,7 +141,7 @@ export default function TrainerProfilePage() {
             </button>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {(profile.skills && profile.skills.length > 0 ? profile.skills : mockUsers.trainer.skills).map((s: string) => (
+            {(profile.skills || []).map((s: string) => (
               <span key={s} className="skill-pill" style={{ fontSize: "0.85rem", padding: "6px 14px" }}>
                 {s}
               </span>

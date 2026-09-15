@@ -15,6 +15,13 @@ export async function GET(
 
     const { id } = await params;
 
+    const enrollment = await prisma.enrollment.findUnique({
+      where: { userId_courseId: { userId: session.user.id, courseId: id } },
+    });
+    if (!enrollment) {
+      return NextResponse.json({ error: "You must be enrolled in this course" }, { status: 403 });
+    }
+
     const assessment = await prisma.assessment.findFirst({
       where: { courseId: id },
       include: {
@@ -73,7 +80,18 @@ export async function POST(
     }
 
     const { id } = await params;
-    const { answers } = await request.json(); // { questionId: selectedOptionId }
+    const body = await request.json();
+    const answers = body?.answers;
+    if (!answers || typeof answers !== "object" || Array.isArray(answers)) {
+      return NextResponse.json({ error: "answers must be an object" }, { status: 400 });
+    }
+
+    const enrollment = await prisma.enrollment.findUnique({
+      where: { userId_courseId: { userId: session.user.id, courseId: id } },
+    });
+    if (!enrollment) {
+      return NextResponse.json({ error: "You must be enrolled in this course" }, { status: 403 });
+    }
 
     const assessment = await prisma.assessment.findFirst({
       where: { courseId: id },
@@ -89,6 +107,9 @@ export async function POST(
     // Grade the quiz
     let score = 0;
     const total = assessment.questions.length;
+    if (total === 0) {
+      return NextResponse.json({ error: "This quiz has no questions" }, { status: 400 });
+    }
 
     for (const question of assessment.questions) {
       if (answers[question.id] === question.correctOptionId) {
@@ -97,7 +118,7 @@ export async function POST(
     }
 
     // Save attempt
-    const attempt = await prisma.attempt.create({
+    await prisma.attempt.create({
       data: {
         assessmentId: assessment.id,
         userId: session.user.id,

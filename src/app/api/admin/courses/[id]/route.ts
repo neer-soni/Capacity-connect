@@ -9,12 +9,15 @@ export async function PATCH(
 ) {
   try {
     const session = await auth();
-    if (!session?.user || (session.user as any).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const { id } = await params;
-    const { action } = await request.json(); // approve | reject
+    const { action, rejectionReason } = await request.json(); // approve | reject
+    if (action !== "approve" && action !== "reject") {
+      return NextResponse.json({ error: "action must be approve or reject" }, { status: 400 });
+    }
 
     const course = await prisma.course.findUnique({
       where: { id },
@@ -24,11 +27,14 @@ export async function PATCH(
       return NextResponse.json({ error: "Course not found" }, { status: 404 });
     }
 
-    const newStatus = action === "approve" ? "published" : "draft";
+    const newStatus = action === "approve" ? "published" : "rejected";
 
     const updated = await prisma.course.update({
       where: { id },
-      data: { status: newStatus },
+      data: {
+        status: newStatus,
+        rejectionReason: action === "reject" ? String(rejectionReason || "") : "",
+      },
     });
 
     // Notify trainer

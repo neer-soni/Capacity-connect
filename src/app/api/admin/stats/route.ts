@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 export async function GET() {
   try {
     const session = await auth();
-    if (!session?.user || (session.user as any).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -19,6 +19,8 @@ export async function GET() {
       completedEnrollments,
       totalCertificates,
       pendingCertValidation,
+      enrollments,
+      publishedCoursesWithEnrollments,
     ] = await Promise.all([
       prisma.user.count(),
       prisma.user.count({ where: { status: "pending" } }),
@@ -28,6 +30,8 @@ export async function GET() {
       prisma.enrollment.count({ where: { status: "completed" } }),
       prisma.certificate.count(),
       prisma.certificate.count({ where: { validatedByAdmin: false } }),
+      prisma.enrollment.findMany({ select: { enrolledAt: true } }),
+      prisma.course.findMany({ where: { status: "published" }, include: { enrollments: { select: { status: true } } } }),
     ]);
 
     const completionRate = totalEnrollments > 0
@@ -43,11 +47,20 @@ export async function GET() {
     });
 
     // Dept breakdown
-    const depts = await prisma.course.groupBy({
-      by: ["department"],
-      where: { status: "published" },
-      _count: true,
-    });
+    const deptStats = new Map<string, { total: number; completed: number }>();
+    for (const course of publishedCoursesWithEnrollments) {
+      const current = deptStats.get(course.department || "General") || { total: 0, completed: 0 };
+      current.total += course.enrollments.length;
+      current.completed += course.enrollments.filter((enrollment) => enrollment.status === "completed").length;
+      deptStats.set(course.department || "General", current);
+    }
+
+    const monthlyCounts = new Map<string, number>();
+    for (const enrollment of enrollments) {
+      const month = enrollment.enrolledAt.toLocaleString("en-US", { month: "short" });
+      monthlyCounts.set(month, (monthlyCounts.get(month) || 0) + 1);
+    }
+    const monthOrder = ["Apr", "May", "Jun", "Jul", "Aug", "Sep"];
 
     return NextResponse.json({
       totalUsers,
@@ -62,18 +75,11 @@ export async function GET() {
         title: c.title,
         enrollments: c._count.enrollments,
       })),
-      courseCompletionByDept: depts.map((d) => ({
-        dept: d.department || "General",
-        rate: Math.floor(Math.random() * 30) + 55, // Simulated for now
+      courseCompletionByDept: Array.from(deptStats.entries()).map(([dept, values]) => ({
+        dept,
+        rate: values.total > 0 ? Math.round((values.completed / values.total) * 100) : 0,
       })),
-      monthlyEnrollments: [
-        { month: "Apr", count: 42 },
-        { month: "May", count: 58 },
-        { month: "Jun", count: 71 },
-        { month: "Jul", count: 65 },
-        { month: "Aug", count: 89 },
-        { month: "Sep", count: totalEnrollments },
-      ],
+      monthlyEnrollments: monthOrder.map((month) => ({ month, count: monthlyCounts.get(month) || 0 })),
     });
   } catch (error) {
     console.error("GET admin stats error:", error);

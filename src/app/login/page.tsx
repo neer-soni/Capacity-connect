@@ -1,11 +1,11 @@
 "use client";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { ArrowRight, Eye, EyeOff, AlertCircle, Loader2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "";
@@ -54,7 +54,7 @@ export default function LoginPage() {
 
       router.push(target);
       router.refresh();
-    } catch (err) {
+    } catch {
       setError("An error occurred. Please try again.");
       setLoading(false);
     }
@@ -208,7 +208,7 @@ export default function LoginPage() {
           </form>
 
           <p style={{ textAlign: "center", fontSize: "0.85rem", color: "hsl(215 16% 57%)", marginTop: 20 }}>
-            Don't have an account?{" "}
+            Don&apos;t have an account?{" "}
             <Link href="/signup" style={{ color: "hsl(215 84% 30%)", fontWeight: 600 }}>
               Sign up
             </Link>
@@ -220,4 +220,10 @@ export default function LoginPage() {
       </div>
     </div>
   );
+}
+
+export default function LoginPage() {
+  return <Suspense fallback={<div style={{ minHeight: "100vh" }} />}>
+    <LoginForm />
+  </Suspense>;
 }
